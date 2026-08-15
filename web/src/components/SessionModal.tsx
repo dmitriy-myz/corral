@@ -10,6 +10,7 @@ import {
 } from "../lib/attach";
 import { formatDropInjection, formatPaste } from "../lib/paste";
 import { closeMessage } from "../lib/protocol";
+import { shouldReattachOnVisible, socketState } from "../lib/reattach";
 import { sessionStateLabel } from "../lib/session-state";
 import { attachCommittedTextInput } from "../lib/text-input";
 import { attachTouchScroll } from "../lib/touch-scroll";
@@ -163,6 +164,14 @@ export function SessionModal({
     const buffered: (string | Uint8Array)[] = [];
     let liveTimer: ReturnType<typeof setTimeout> | undefined;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    // Effect-local, not the `closeInfo` state: this effect re-runs only on [env, paneId, attempt,
+    // awaitAgent], so the state captured in its closure would be the value from the render that
+    // created this socket — stale by the time the visibility handler below reads it.
+    let lastCloseCode: number | null = null;
+
+    // A fresh attach has not failed yet. Without this the banner from the connection that died in the
+    // background would stay on screen over a working terminal.
+    setCloseInfo(null);
 
     function sendResize(): void {
       fit.fit();
@@ -197,6 +206,7 @@ export function SessionModal({
       // BEFORE it uploads — otherwise it writes an orphan temp file whose path can never be injected.
       // Only the ref is cleared, not the effect-local `live`, which shouldRetryAttach below still reads.
       liveRef.current = false;
+      lastCloseCode = e.code;
       if (liveTimer !== undefined) clearTimeout(liveTimer);
       // Boot race: retry a not-yet-live post-spawn attach (4001) until Claude registers or the window
       // elapses — the buffered error blob is dropped so the user only ever sees "starting…" then Claude.
@@ -249,6 +259,21 @@ export function SessionModal({
       if (live && ws.readyState === WebSocket.OPEN) ws.send(formatPaste(text));
     };
     el.addEventListener("paste", onPasteCapture, true);
+
+    // Coming back to a tab iOS froze: the server reaped the socket as half-open while we were away, so
+    // re-attach instead of leaving the operator on a "connection closed" banner. Bumping `attempt`
+    // reuses the boot-race path — the effect tears this socket down and builds a new one, and herdr
+    // repaints the pane on attach, so the terminal fills itself back in. See lib/reattach.ts.
+    function onVisibility(): void {
+      if (disposed) return;
+      if (!shouldReattachOnVisible({
+        visible: document.visibilityState === "visible",
+        socket: socketState(ws.readyState),
+        closeCode: lastCloseCode,
+      })) return;
+      setAttempt((a) => a + 1);
+    }
+    document.addEventListener("visibilitychange", onVisibility);
 
     // IM-routed keystrokes (ibus/fcitx → keydown "Process"/229) never reach term.onData — see
     // lib/text-input.ts. Same live/OPEN gate, plus the scroll-to-bottom triggerDataEvent would have done.
@@ -307,6 +332,7 @@ export function SessionModal({
       frameObserver.disconnect();
       detachTouchScroll();
       el.removeEventListener("paste", onPasteCapture, true);
+      document.removeEventListener("visibilitychange", onVisibility);
       detachTextInput();
       dataSub.dispose();
       selSub.dispose();
