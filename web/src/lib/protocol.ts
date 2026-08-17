@@ -11,7 +11,11 @@ export function closeMessage(code: number, reason: string): string {
   if (code === 4001) return "attach unavailable";
   if (code === 1013) return "attach limit reached — too many terminals open";
   if (code === 1000) return "session ended";
-  return "connection closed";
+  // The code is part of the copy because this branch is the UNKNOWN one, and it is the branch that
+  // actually gets reported. 1006 (died with no close frame) and 1001 (browser went away) mean very
+  // different things and rendered identically, so every report of "connection closed" arrived without
+  // the one fact that would have told them apart — and a phone has no console to recover it from.
+  return `connection closed (${String(code)})`;
 }
 
 // Keys are `env:paneId` and a paneId may itself contain a colon (PANE_RE admits `:`), so split on the

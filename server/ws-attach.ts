@@ -53,6 +53,14 @@ interface AuditCloseEntry {
   // operator in the close reason, where they are already entitled to see it; the log records only
   // that it happened.
   readonly probeFailed?: true;
+  // The WebSocket close code, when it was the socket that ended the attach (absent when the pty exited
+  // first). The CODE ONLY — never `reason`, which on the 4001 path carries the child's own output and
+  // so belongs to the operator's screen, not to this trail (SEC-6, same line the probeFailed flag walks).
+  readonly code?: number;
+  // Attach lifetime in ms. Pairing open/close rows by hand hides exactly the pattern worth seeing: a
+  // fleet of attaches that each die after a few seconds reads as ordinary traffic until the durations
+  // are next to each other.
+  readonly ms?: number;
 }
 export type AuditEntry = AuditOpenEntry | AuditCloseEntry;
 
@@ -221,11 +229,18 @@ function onConnection(ctx: ConnectionCtx): void {
 
   const spawnedAt = ctx.now();
   let closeAudited = false;
-  const auditClose = (probeFailed: boolean): void => {
+  const auditClose = (probeFailed: boolean, code?: number): void => {
     if (closeAudited) return;
     closeAudited = true;
-    const base = { event: "close" as const, ts: new Date().toISOString(), env: ctx.env.id, paneId: ctx.paneId };
-    appendAudit(ctx.auditLogPath, probeFailed ? { ...base, probeFailed: true } : base);
+    const base = {
+      event: "close" as const, ts: new Date().toISOString(), env: ctx.env.id, paneId: ctx.paneId,
+      ms: ctx.now() - spawnedAt,
+    };
+    appendAudit(ctx.auditLogPath, {
+      ...base,
+      ...(probeFailed ? { probeFailed: true } : {}),
+      ...(code === undefined ? {} : { code }),
+    });
   };
 
   // Hold the child's first output so an exit inside the probe grace can name the REAL cause rather
@@ -260,9 +275,13 @@ function onConnection(ctx: ConnectionCtx): void {
     auditClose(diedInProbe);
   });
   // Wrapped, NOT passed by reference: ws hands its listener (code, reason), which would arrive as the
-  // `probeFailed` argument and mark every operator-initiated close as a probe failure.
-  ctx.ws.on("close", () => {
-    auditClose(false);
+  // `probeFailed` argument and mark every operator-initiated close as a probe failure. The code is
+  // taken from that first argument deliberately; `reason` is dropped on the floor (see AuditCloseEntry).
+  ctx.ws.on("close", (...args: unknown[]) => {
+    // The bridge's ws port types listeners as (...unknown[]) so mocks stay cheap, so narrow rather than
+    // assert: a mock that fires close with no arguments simply audits without a code.
+    const code = typeof args[0] === "number" ? args[0] : undefined;
+    auditClose(false, code);
     ctx.focus.onAttachClose(ctx.env, ctx.paneId);
   });
 

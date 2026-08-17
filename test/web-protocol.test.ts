@@ -23,8 +23,11 @@ describe("closeMessage (WS close-code → operator copy)", () => {
   it("1000 → session ended (normal close)", () => {
     expect(closeMessage(1000, "")).toBe("session ended");
   });
-  it("any other code → generic connection closed", () => {
-    expect(closeMessage(1006, "")).toBe("connection closed");
+  it("any other code → generic connection closed, WITH the code", () => {
+    // The number is the point: this is the branch nobody can diagnose from a phone, where 1006 (died
+    // with no close frame) and 1001 (browser went away) used to render identically.
+    expect(closeMessage(1006, "")).toBe("connection closed (1006)");
+    expect(closeMessage(1001, "")).toBe("connection closed (1001)");
   });
 });
 
