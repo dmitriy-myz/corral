@@ -19,6 +19,7 @@ import { readTerminalPrefs } from "../lib/terminal-prefs";
 import { attachCommittedTextInput } from "../lib/text-input";
 import { attachTouchScroll } from "../lib/touch-scroll";
 import { isFileDrag, uploadFile, UPLOAD_MAX_BYTES } from "../lib/upload";
+import { observeViewport, overlayStyle, readViewport, type Viewport } from "../lib/visual-viewport";
 import { attachWheelGain } from "../lib/wheel-gain";
 
 import "@xterm/xterm/css/xterm.css";
@@ -99,6 +100,15 @@ export function SessionModal({
   const sendInputRef = useRef<((bytes: Uint8Array) => void) | null>(null);
   // Sticky Ctrl for the on-screen key bar. The ref is what the terminal effect reads — it closes
   // over its own scope and would otherwise capture the first render's value forever.
+  // The region a soft keyboard leaves visible. Null off a phone (and under jsdom), where the
+  // stylesheet's own sizing is already right.
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  useEffect(() => {
+    const sync = (): void => { setViewport(readViewport(window)); };
+    sync();
+    return observeViewport(window, sync);
+  }, []);
+
   const [ctrlArmed, setCtrlArmed] = useState(false);
   const ctrlArmedRef = useRef(false);
   ctrlArmedRef.current = ctrlArmed;
@@ -519,7 +529,11 @@ export function SessionModal({
   // it, so the scrim's one remaining effect was to darken the board showing THROUGH the panel —
   // muting the header without dimming anything the operator can actually see.
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 sm:bg-black/60" onClick={onClose}>
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50 sm:bg-black/60"
+      style={overlayStyle(viewport)}
+      onClick={onClose}
+    >
       <div
         // dvh, not vh: on iOS `vh` is the LARGE viewport (toolbars hidden), so with the Safari toolbars
         // shown a 90vh panel overflows the visible area — and `fixed inset-0` means it cannot be
