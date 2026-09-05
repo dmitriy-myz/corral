@@ -53,3 +53,18 @@ export const ARROW_KEYS: readonly { readonly id: Arrow; readonly label: string; 
   { id: "up", label: "↑", title: "Up arrow" },
   { id: "right", label: "→", title: "Right arrow" },
 ];
+
+/**
+ * Applies an armed sticky Ctrl to one chunk of user input.
+ *
+ * `consumed` says whether the modifier was spent, and it is deliberately false for anything that is
+ * not a single character. Typed text is not the only thing on the input channel — a mouse report or
+ * an escape sequence arrives there too (touch-scroll turns a swipe into wheel reports), and eating
+ * the modifier on one of those would drop it without the operator ever pressing a key. A single
+ * character with no control code still consumes it: leaving it armed would silently modify some
+ * later, unrelated key.
+ */
+export function applyStickyCtrl(input: string, armed: boolean): { text: string; consumed: boolean } {
+  if (!armed || input.length !== 1) return { text: input, consumed: false };
+  return { text: controlCode(input) ?? input, consumed: true };
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { arrowSequence, controlCode } from "../web/src/lib/key-bar";
+import { applyStickyCtrl, arrowSequence, controlCode } from "../web/src/lib/key-bar";
 
 describe("controlCode", () => {
   it("maps letters to their control character, case-insensitively", () => {
@@ -43,5 +43,27 @@ describe("arrowSequence", () => {
   it("uses the parameterised CSI for Ctrl, in either cursor mode — SS3 cannot carry a modifier", () => {
     expect(arrowSequence("right", { applicationCursorKeys: false, ctrl: true })).toBe("\x1b[1;5C");
     expect(arrowSequence("right", { applicationCursorKeys: true, ctrl: true })).toBe("\x1b[1;5C");
+  });
+});
+
+describe("applyStickyCtrl", () => {
+  it("turns the next typed character into its control code — the Ctrl+C case", () => {
+    expect(applyStickyCtrl("c", true)).toEqual({ text: "\x03", consumed: true });
+  });
+
+  it("passes input through untouched when nothing is armed", () => {
+    expect(applyStickyCtrl("c", false)).toEqual({ text: "c", consumed: false });
+  });
+
+  it("consumes the modifier even on a character with no control code", () => {
+    // Otherwise it would stay armed and silently modify some later, unrelated key.
+    expect(applyStickyCtrl("ф", true)).toEqual({ text: "ф", consumed: true });
+  });
+
+  it("leaves escape sequences and mouse reports alone, and keeps the modifier armed", () => {
+    // touch-scroll turns a swipe into wheel reports on this very channel.
+    expect(applyStickyCtrl("\x1b[M#!!", true)).toEqual({ text: "\x1b[M#!!", consumed: false });
+    expect(applyStickyCtrl("\x1b[A", true)).toEqual({ text: "\x1b[A", consumed: false });
+    expect(applyStickyCtrl("", true)).toEqual({ text: "", consumed: false });
   });
 });

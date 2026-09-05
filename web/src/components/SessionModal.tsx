@@ -11,7 +11,7 @@ import {
   RECONNECT_LIMIT_DELAY_MS, RECONNECT_MAX_MS, reconnectNominalMs, RECONNECT_STABLE_MS,
   RESUME_PROBE_MS, type ResumeTrigger, resumeAction, shouldReconnectAfterClose, shouldRetryAttach,
 } from "../lib/attach";
-import { controlCode } from "../lib/key-bar";
+import { applyStickyCtrl } from "../lib/key-bar";
 import { formatDropInjection, formatPaste } from "../lib/paste";
 import { closeMessage } from "../lib/protocol";
 import { sessionStateLabel } from "../lib/session-state";
@@ -358,10 +358,15 @@ export function SessionModal({
     window.addEventListener("pageshow", onPageShow);
 
     // Keystrokes → binary frame (the bridge treats binary as raw input); resize → text frame (JSON control).
-    const dataSub = term.onData((d) => {
+    const dataSub = term.onData((raw) => {
       // Drop input while buffering a not-yet-live session: output is hidden during "starting…", so any
       // keystroke would be blind — typed into a terminal the operator can't see. Flows once goLive fires.
       if (!live) return;
+      // Sticky Ctrl from the on-screen bar lands here, not on the beforeinput path: a soft
+      // keyboard produces an ordinary keydown, so the character reaches xterm's own input handler
+      // and arrives as onData. See lib/key-bar.ts for why only single characters consume it.
+      const { text: d, consumed } = applyStickyCtrl(raw, ctrlArmedRef.current);
+      if (consumed) setCtrlArmed(false);
       if (ws.readyState === WebSocket.OPEN) ws.send(new TextEncoder().encode(d));
     });
 
@@ -405,11 +410,8 @@ export function SessionModal({
         if (!live || ws.readyState !== WebSocket.OPEN) return;
         // An armed Ctrl consumes exactly one character, whether or not it maps to a control code:
         // leaving it armed after an unmappable key would silently modify some later, unrelated one.
-        let text = raw;
-        if (ctrlArmedRef.current) {
-          text = controlCode(raw.slice(0, 1)) ?? raw;
-          setCtrlArmed(false);
-        }
+        const { text, consumed } = applyStickyCtrl(raw, ctrlArmedRef.current);
+        if (consumed) setCtrlArmed(false);
         ws.send(new TextEncoder().encode(text));
         if (term.options.scrollOnUserInput === true) term.scrollToBottom();
       });
