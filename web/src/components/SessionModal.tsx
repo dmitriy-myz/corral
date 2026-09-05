@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState, type JSX } from "react";
 
+import { KeyBar } from "./KeyBar";
 import { SessionMeta } from "./SessionMeta";
 import { useTheme } from "./ThemeProvider";
 import {
@@ -10,6 +11,7 @@ import {
   RECONNECT_LIMIT_DELAY_MS, RECONNECT_MAX_MS, reconnectNominalMs, RECONNECT_STABLE_MS,
   RESUME_PROBE_MS, type ResumeTrigger, resumeAction, shouldReconnectAfterClose, shouldRetryAttach,
 } from "../lib/attach";
+import { controlCode } from "../lib/key-bar";
 import { formatDropInjection, formatPaste } from "../lib/paste";
 import { closeMessage } from "../lib/protocol";
 import { sessionStateLabel } from "../lib/session-state";
@@ -95,6 +97,11 @@ export function SessionModal({
   // session and never writes to a closed socket.
   const liveRef = useRef(false);
   const sendInputRef = useRef<((bytes: Uint8Array) => void) | null>(null);
+  // Sticky Ctrl for the on-screen key bar. The ref is what the terminal effect reads — it closes
+  // over its own scope and would otherwise capture the first render's value forever.
+  const [ctrlArmed, setCtrlArmed] = useState(false);
+  const ctrlArmedRef = useRef(false);
+  ctrlArmedRef.current = ctrlArmed;
   const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
 
@@ -394,8 +401,15 @@ export function SessionModal({
     const helperTextarea = term.textarea;
     const detachTextInput = helperTextarea === undefined
       ? () => undefined
-      : attachCommittedTextInput(helperTextarea, (text) => {
+      : attachCommittedTextInput(helperTextarea, (raw) => {
         if (!live || ws.readyState !== WebSocket.OPEN) return;
+        // An armed Ctrl consumes exactly one character, whether or not it maps to a control code:
+        // leaving it armed after an unmappable key would silently modify some later, unrelated one.
+        let text = raw;
+        if (ctrlArmedRef.current) {
+          text = controlCode(raw.slice(0, 1)) ?? raw;
+          setCtrlArmed(false);
+        }
         ws.send(new TextEncoder().encode(text));
         if (term.options.scrollOnUserInput === true) term.scrollToBottom();
       });
@@ -625,6 +639,15 @@ export function SessionModal({
             className="pointer-events-none absolute inset-x-0 top-0 rounded border border-muted-foreground/30"
           />
         </div>
+        <KeyBar
+          ctrlArmed={ctrlArmed}
+          onCtrlArmedChange={setCtrlArmed}
+          // Read at press time, never captured: an app can flip DECCKM mid-session.
+          applicationCursorKeys={() => termRef.current?.modes.applicationCursorKeysMode ?? false}
+          // Same gated bridge the drop handler uses, so a press before the session is live, or after
+          // it closed, is a no-op rather than a write to a dead socket.
+          onKey={(seq) => { sendInputRef.current?.(new TextEncoder().encode(seq)); }}
+        />
         {dragging && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
             <span className="text-foreground text-sm font-medium rounded-md border border-border bg-card/80 px-4 py-2">
