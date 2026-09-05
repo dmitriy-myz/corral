@@ -546,7 +546,10 @@ export function SessionModal({
         // nothing — the board it would show through is entirely behind it — so on a phone the effect
         // costs a per-frame backdrop blur, which Safari charges for on every scroll, and returns a
         // muted header. On a desktop the panel is a window over the board, which is the whole point.
-        className="relative bg-card border-border shadow-2xl w-screen h-[100dvh] flex flex-col overflow-hidden sm:bg-card/85 sm:backdrop-blur-md sm:w-[90vw] sm:h-[90dvh] sm:rounded-lg sm:border"
+        // h-full, not h-[100dvh]: the overlay is what tracks the keyboard (visual-viewport.ts), and a
+        // panel measured against the viewport instead would overflow it — centred by the flex parent,
+        // so the overflow splits evenly and the key bar lands back under the keyboard.
+        className="relative bg-card border-border shadow-2xl w-screen h-full flex flex-col overflow-hidden sm:bg-card/85 sm:backdrop-blur-md sm:w-[90vw] sm:h-[90dvh] sm:rounded-lg sm:border"
         onClick={(e) => { e.stopPropagation(); }}
         onDragEnter={(e) => { if (canAttachFiles && isFileDrag(e.dataTransfer.types)) { e.preventDefault(); setDragging(true); } }}
         onDragOver={(e) => { if (canAttachFiles && isFileDrag(e.dataTransfer.types)) e.preventDefault(); }}
