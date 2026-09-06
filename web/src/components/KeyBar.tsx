@@ -14,6 +14,8 @@ interface Props {
   readonly ctrlArmed: boolean;
   /** Puts focus back on the terminal after a press — see `press` for why that is not automatic. */
   readonly refocus: () => void;
+  /** Reads the clipboard and injects it. iOS offers no paste menu over the terminal — see the button. */
+  readonly onPaste: () => void;
 }
 
 // touch-manipulation is load-bearing, not polish: without it a quick second tap is a double-tap
@@ -33,8 +35,15 @@ const BTN = "min-w-9 h-9 px-2 rounded border border-border bg-muted/60 text-fore
  *
  * Collapsing is remembered per device, next to the scroll speed: the bar costs a row of a phone
  * screen, and someone reading long output wants that row back without losing it for good.
+ *
+ * Paste is here for the same reason the arrows are. iOS raises its paste callout over an editable or
+ * selectable element, and the terminal is neither: xterm's helper textarea sits off-screen at
+ * left:-9999em and `.xterm` is user-select:none, so a long press finds nothing to offer a menu for.
+ * A button reading the clipboard itself is the only path that does not fight that layout.
  */
-export function KeyBar({ onKey, applicationCursorKeys, onCtrlArmedChange, ctrlArmed, refocus }: Props): JSX.Element | null {
+export function KeyBar({
+  onKey, applicationCursorKeys, onCtrlArmedChange, ctrlArmed, refocus, onPaste,
+}: Props): JSX.Element | null {
   // Pointer, not width: a tablet in landscape is wide and still has no arrow keys, and a narrow
   // desktop window has both. `matchMedia` is read in an effect so the first render is stable and a
   // device that changes pointer (a tablet gaining a keyboard) re-evaluates.
@@ -114,6 +123,13 @@ export function KeyBar({ onKey, applicationCursorKeys, onCtrlArmedChange, ctrlAr
         className={`${BTN} ${ctrlArmed ? "bg-primary text-primary-foreground border-primary" : ""}`}
         onPointerDown={(e) => { e.preventDefault(); onCtrlArmedChange(!ctrlArmed); refocus(); }}
       >ctrl</button>
+      <button
+        type="button"
+        title="Paste"
+        aria-label="Paste"
+        className={BTN}
+        onPointerDown={(e) => { e.preventDefault(); onPaste(); }}
+      >paste</button>
       {ARROW_KEYS.map((a) => (
         <button
           key={a.id}

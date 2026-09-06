@@ -500,6 +500,23 @@ export function SessionModal({
   // `canAttachFiles` (local only) and a live session (so no orphan temp file is written for a drop that
   // can't be injected). Per-file requests: on a mid-batch failure we still inject whatever uploaded
   // successfully so far (those bytes are already on-host) and surface the error for the rest.
+  // iOS has no paste menu to offer over the terminal (see KeyBar), so the bar's button reads the
+  // clipboard itself. Same bytes as a real paste — formatPaste brackets it, so Claude Code treats a
+  // multi-line clipboard as one paste instead of a run of Enters.
+  async function handlePasteButton(): Promise<void> {
+    if (!liveRef.current) { setDropError("session is not live — try again"); return; }
+    try {
+      // A user gesture is required and iOS prompts the first time; a refusal lands in the catch.
+      const text = await navigator.clipboard.readText();
+      if (text === "") return;
+      setDropError(null);
+      sendInputRef.current?.(formatPaste(text));
+    } catch (err) {
+      // No clipboard API at all (an insecure origin serves none), or the read was denied.
+      setDropError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function handleDrop(e: React.DragEvent): Promise<void> {
     e.preventDefault();
     setDragging(false);
@@ -667,6 +684,7 @@ export function SessionModal({
           // it closed, is a no-op rather than a write to a dead socket.
           onKey={(seq) => { sendInputRef.current?.(new TextEncoder().encode(seq)); }}
           refocus={() => { termRef.current?.focus(); }}
+          onPaste={() => { void handlePasteButton().finally(() => { termRef.current?.focus(); }); }}
         />
         {dragging && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">

@@ -20,6 +20,7 @@ function renderBar(opts: { coarse: boolean; ctrlArmed?: boolean }) {
   const onKey = vi.fn();
   const onCtrlArmedChange = vi.fn();
   const refocus = vi.fn();
+  const onPaste = vi.fn();
   render(
     <KeyBar
       onKey={onKey}
@@ -27,9 +28,10 @@ function renderBar(opts: { coarse: boolean; ctrlArmed?: boolean }) {
       onCtrlArmedChange={onCtrlArmedChange}
       ctrlArmed={opts.ctrlArmed ?? false}
       refocus={refocus}
+      onPaste={onPaste}
     />,
   );
-  return { onKey, onCtrlArmedChange, refocus };
+  return { onKey, onCtrlArmedChange, refocus, onPaste };
 }
 
 describe("KeyBar", () => {
@@ -40,7 +42,7 @@ describe("KeyBar", () => {
 
   it("offers exactly the keys a soft keyboard lacks", () => {
     renderBar({ coarse: true });
-    for (const name of ["Escape", "Tab", "Ctrl", "Left arrow", "Down arrow", "Up arrow", "Right arrow"]) {
+    for (const name of ["Escape", "Tab", "Ctrl", "Paste", "Left arrow", "Down arrow", "Up arrow", "Right arrow"]) {
       expect(screen.getByLabelText(name)).toBeTruthy();
     }
   });
@@ -57,6 +59,13 @@ describe("KeyBar", () => {
     fireEvent.pointerDown(screen.getByLabelText("Tab"));
     expect(onKey).toHaveBeenNthCalledWith(1, "\x1b");
     expect(onKey).toHaveBeenNthCalledWith(2, "\t");
+  });
+
+  it("offers paste, which iOS cannot raise over the terminal itself", () => {
+    const { onPaste, onKey } = renderBar({ coarse: true });
+    fireEvent.pointerDown(screen.getByLabelText("Paste"));
+    expect(onPaste).toHaveBeenCalledTimes(1);
+    expect(onKey).not.toHaveBeenCalled();
   });
 
   it("arms Ctrl rather than sending anything", () => {
