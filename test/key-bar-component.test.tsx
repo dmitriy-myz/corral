@@ -19,15 +19,17 @@ function renderBar(opts: { coarse: boolean; ctrlArmed?: boolean }) {
   stubPointer(opts.coarse);
   const onKey = vi.fn();
   const onCtrlArmedChange = vi.fn();
+  const refocus = vi.fn();
   render(
     <KeyBar
       onKey={onKey}
       applicationCursorKeys={() => false}
       onCtrlArmedChange={onCtrlArmedChange}
       ctrlArmed={opts.ctrlArmed ?? false}
+      refocus={refocus}
     />,
   );
-  return { onKey, onCtrlArmedChange };
+  return { onKey, onCtrlArmedChange, refocus };
 }
 
 describe("KeyBar", () => {
@@ -74,5 +76,26 @@ describe("KeyBar", () => {
   it("shows the armed state, so the modifier is never invisibly stuck", () => {
     renderBar({ coarse: true, ctrlArmed: true });
     expect(screen.getByLabelText("Ctrl").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("takes focus back after every press, which is what holds the keyboard open", () => {
+    // Fast arrowing down a list otherwise loses focus to a synthesized tap and the keyboard closes.
+    const { refocus } = renderBar({ coarse: true });
+    fireEvent.pointerDown(screen.getByLabelText("Up arrow"));
+    fireEvent.pointerDown(screen.getByLabelText("Up arrow"));
+    fireEvent.pointerDown(screen.getByLabelText("Escape"));
+    expect(refocus).toHaveBeenCalledTimes(3);
+  });
+
+  it("collapses to a single reopen button and comes back", () => {
+    renderBar({ coarse: true });
+    fireEvent.pointerDown(screen.getByLabelText("Hide keys"));
+
+    expect(screen.queryByLabelText("Up arrow")).toBeNull();
+    const reopen = screen.getByLabelText("Show keys");
+    expect(reopen.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.pointerDown(reopen);
+    expect(screen.getByLabelText("Up arrow")).toBeTruthy();
   });
 });

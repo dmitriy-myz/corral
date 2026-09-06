@@ -666,6 +666,7 @@ export function SessionModal({
           // Same gated bridge the drop handler uses, so a press before the session is live, or after
           // it closed, is a no-op rather than a write to a dead socket.
           onKey={(seq) => { sendInputRef.current?.(new TextEncoder().encode(seq)); }}
+          refocus={() => { termRef.current?.focus(); }}
         />
         {dragging && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
