@@ -707,7 +707,13 @@ export function SessionModal({
           // Same gated bridge the drop handler uses, so a press before the session is live, or after
           // it closed, is a no-op rather than a write to a dead socket.
           onKey={(seq) => { sendInputRef.current?.(new TextEncoder().encode(seq)); }}
-          refocus={() => { termRef.current?.focus(); }}
+          // Conditional: with the bar's keys non-focusable this is normally a no-op, and calling
+          // focus() on an already-focused textarea is itself what iOS answers by cycling the
+          // keyboard. It stays as the recovery path for the ways a tap can still steal focus.
+          refocus={() => {
+            const ta = termRef.current?.textarea;
+            if (ta !== undefined && document.activeElement !== ta) termRef.current?.focus();
+          }}
           onPaste={() => { void handlePasteButton().finally(() => { termRef.current?.focus(); }); }}
         />
         {pastePrompt && (

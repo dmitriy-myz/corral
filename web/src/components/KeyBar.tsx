@@ -12,18 +12,52 @@ interface Props {
   readonly onCtrlArmedChange: (armed: boolean) => void;
   /** Cleared by the owner once a typed character consumed the modifier. */
   readonly ctrlArmed: boolean;
-  /** Puts focus back on the terminal after a press — see `press` for why that is not automatic. */
+  /** Restores focus if a press managed to take it. A no-op when it did not — see Key. */
   readonly refocus: () => void;
-  /** Reads the clipboard and injects it. iOS offers no paste menu over the terminal — see the button. */
+  /** Reads the clipboard and injects it. iOS offers no paste menu over the terminal. */
   readonly onPaste: () => void;
 }
 
-// touch-manipulation is load-bearing, not polish: without it a quick second tap is a double-tap
-// gesture, and Safari answers that by zooming and dropping focus — which closes the keyboard mid-way
-// through arrowing down a list. Declaring the element has no double-tap meaning removes the gesture
-// (and the 300ms wait with it).
-const BTN = "min-w-9 h-9 px-2 rounded border border-border bg-muted/60 text-foreground text-xs " +
-  "font-mono leading-none flex items-center justify-center active:bg-muted select-none touch-manipulation";
+// Spans with role=button, NOT <button>. A real button is focusable, so tapping one takes focus off
+// the terminal's textarea and iOS closes the keyboard; asking for focus back then reopens it, which
+// is the flicker — and on a key that does not restore focus, like Ctrl, the keyboard just stays
+// closed. An element with no tabindex cannot be focused by a tap at all, so focus never moves and
+// there is nothing to restore. The bar is coarse-pointer only, so being unreachable by Tab costs
+// nothing: a device with a Tab key has the real keys too.
+//
+// touch-manipulation is load-bearing as well. Without it a quick second tap is a double-tap gesture,
+// and Safari answers that by zooming and dropping focus — closing the keyboard mid-way through
+// arrowing down a list. Declaring the element has no double-tap meaning removes the gesture (and the
+// 300 ms click delay with it).
+const BTN = "cursor-pointer min-w-9 h-9 px-2 rounded border border-border bg-muted/60 text-foreground " +
+  "text-xs font-mono leading-none flex items-center justify-center active:bg-muted select-none touch-manipulation";
+
+function Key(
+  { label, name, onPress, className = "", pressed, expanded }: {
+    readonly label: string;
+    readonly name: string;
+    readonly onPress: () => void;
+    readonly className?: string;
+    readonly pressed?: boolean;
+    readonly expanded?: boolean;
+  },
+): JSX.Element {
+  return (
+    <span
+      role="button"
+      title={name}
+      aria-label={name}
+      {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
+      {...(expanded === undefined ? {} : { "aria-expanded": expanded })}
+      className={`${BTN} ${className}`}
+      // Both handlers: preventDefault on mousedown is what stops a desktop pointer from moving focus,
+      // and pointerdown is what fires first on touch. Acting on the down event rather than on click
+      // also means the key repeats as fast as the finger can tap.
+      onMouseDown={(e) => { e.preventDefault(); }}
+      onPointerDown={(e) => { e.preventDefault(); onPress(); }}
+    >{label}</span>
+  );
+}
 
 /**
  * On-screen keys for touch devices. A phone's soft keyboard has no arrows, Esc, Tab or Ctrl, so every
@@ -39,7 +73,6 @@ const BTN = "min-w-9 h-9 px-2 rounded border border-border bg-muted/60 text-fore
  * Paste is here for the same reason the arrows are. iOS raises its paste callout over an editable or
  * selectable element, and the terminal is neither: xterm's helper textarea sits off-screen at
  * left:-9999em and `.xterm` is user-select:none, so a long press finds nothing to offer a menu for.
- * A button reading the clipboard itself is the only path that does not fight that layout.
  */
 export function KeyBar({
   onKey, applicationCursorKeys, onCtrlArmedChange, ctrlArmed, refocus, onPaste,
@@ -74,10 +107,6 @@ export function KeyBar({
   function press(seq: string): void {
     onKey(seq);
     if (ctrlArmed) onCtrlArmedChange(false);
-    // preventDefault on pointerdown keeps focus in the common case, but a rapid sequence of taps can
-    // still lose it — a synthesized click, a cancelled gesture, Safari deciding the tap belongs to
-    // the page. Asking for focus back after every press is the only thing that holds the keyboard
-    // open through fast arrowing; it is a no-op when focus never left.
     refocus();
   }
 
@@ -87,16 +116,13 @@ export function KeyBar({
     // the output in the corner instead, dimmed until touched, and the terminal's ResizeObserver
     // refits into the space the bar gave up.
     return (
-      <button
-        type="button"
-        title="Show keys"
-        aria-label="Show keys"
-        aria-expanded={false}
-        className="absolute bottom-1 right-1 z-10 h-7 w-7 rounded border border-border bg-card/70
-          text-foreground text-xs leading-none flex items-center justify-center opacity-60
-          active:opacity-100 select-none touch-manipulation"
-        onPointerDown={(e) => { e.preventDefault(); setHiddenPref(false); }}
-      >⌨</button>
+      <Key
+        label="⌨"
+        name="Show keys"
+        expanded={false}
+        className="absolute bottom-1 right-1 z-10 min-w-0 h-7 w-7 px-0 bg-card/70 opacity-60 active:opacity-100"
+        onPress={() => { setHiddenPref(false); }}
+      />
     );
   }
 
@@ -104,53 +130,27 @@ export function KeyBar({
     // shrink-0 so the bar never gets squeezed to nothing by the terminal's flex-1 above it.
     <div className="shrink-0 flex items-center gap-1 px-1 py-1 border-t border-border overflow-x-auto">
       {BAR_KEYS.map((k) => (
-        <button
-          key={k.id}
-          type="button"
-          title={k.title}
-          aria-label={k.title}
-          className={BTN}
-          // onPointerDown, not onClick: the terminal's textarea must not lose focus, or the soft
-          // keyboard closes on every tap. preventDefault keeps focus where it is.
-          onPointerDown={(e) => { e.preventDefault(); press(k.seq); }}
-        >{k.label}</button>
+        <Key key={k.id} label={k.label} name={k.title} onPress={() => { press(k.seq); }} />
       ))}
-      <button
-        type="button"
-        title="Ctrl (applies to the next key)"
-        aria-label="Ctrl"
-        aria-pressed={ctrlArmed}
-        className={`${BTN} ${ctrlArmed ? "bg-primary text-primary-foreground border-primary" : ""}`}
-        onPointerDown={(e) => { e.preventDefault(); onCtrlArmedChange(!ctrlArmed); refocus(); }}
-      >ctrl</button>
-      <button
-        type="button"
-        title="Paste"
-        aria-label="Paste"
-        className={BTN}
-        onPointerDown={(e) => { e.preventDefault(); onPaste(); }}
-      >paste</button>
+      <Key
+        label="ctrl"
+        name="Ctrl"
+        pressed={ctrlArmed}
+        className={ctrlArmed ? "bg-primary text-primary-foreground border-primary" : ""}
+        onPress={() => { onCtrlArmedChange(!ctrlArmed); refocus(); }}
+      />
+      <Key label="paste" name="Paste" onPress={onPaste} />
       {ARROW_KEYS.map((a) => (
-        <button
+        <Key
           key={a.id}
-          type="button"
-          title={a.title}
-          aria-label={a.title}
-          className={BTN}
-          onPointerDown={(e) => {
-            e.preventDefault();
+          label={a.label}
+          name={a.title}
+          onPress={() => {
             press(arrowSequence(a.id, { applicationCursorKeys: applicationCursorKeys(), ctrl: ctrlArmed }));
           }}
-        >{a.label}</button>
+        />
       ))}
-      <button
-        type="button"
-        title="Hide keys"
-        aria-label="Hide keys"
-        aria-expanded
-        className={`${BTN} ml-auto`}
-        onPointerDown={(e) => { e.preventDefault(); setHiddenPref(true); }}
-      >▾</button>
+      <Key label="▾" name="Hide keys" expanded className="ml-auto" onPress={() => { setHiddenPref(true); }} />
     </div>
   );
 }

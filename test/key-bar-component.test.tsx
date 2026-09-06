@@ -87,6 +87,17 @@ describe("KeyBar", () => {
     expect(screen.getByLabelText("Ctrl").getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("keeps its keys unfocusable, which is what stops iOS closing the keyboard on a tap", () => {
+    // A real <button> takes focus off the terminal's textarea; restoring it then reopens the
+    // keyboard, and on a key that does not restore it the keyboard just stays shut.
+    renderBar({ coarse: true });
+    for (const name of ["Up arrow", "Ctrl", "Escape", "Paste"]) {
+      const key = screen.getByLabelText(name);
+      expect(key.tagName).toBe("SPAN");
+      expect(key.hasAttribute("tabindex")).toBe(false);
+    }
+  });
+
   it("takes focus back after every press, which is what holds the keyboard open", () => {
     // Fast arrowing down a list otherwise loses focus to a synthesized tap and the keyboard closes.
     const { refocus } = renderBar({ coarse: true });
