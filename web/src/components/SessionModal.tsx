@@ -15,6 +15,7 @@ import {
 import { applyStickyCtrl } from "../lib/key-bar";
 import { formatDropInjection, formatPaste } from "../lib/paste";
 import { closeMessage } from "../lib/protocol";
+import { createResizeGate } from "../lib/resize-gate";
 import { sessionStateLabel } from "../lib/session-state";
 import { readTerminalPrefs } from "../lib/terminal-prefs";
 import { attachCommittedTextInput } from "../lib/text-input";
@@ -222,12 +223,23 @@ export function SessionModal({
     // takeover lock. Effect-local is the right scope: the next run genuinely starts fresh.
     let pending: "none" | "backoff" | "resume" | "probe" = "none";
 
+    // Raw and unconditional. Kept for the liveness probe below, whose whole purpose is to WRITE —
+    // deduplicating that send would defeat it.
     function sendResize(): void {
       fit.fit();
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
       }
     }
+
+    // Everything driven by layout goes through the gate instead: a resize makes the application
+    // repaint, and the copy it had already drawn is pushed into scrollback. See lib/resize-gate.ts.
+    const resizeGate = createResizeGate({
+      perform: () => { fit.fit(); return { cols: term.cols, rows: term.rows }; },
+      emit: (dims) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "resize", ...dims }));
+      },
+    });
 
     function goLive(): void {
       if (live) return;
@@ -259,7 +271,7 @@ export function SessionModal({
 
     ws.onopen = () => {
       setReconnectInfo(null);
-      sendResize();
+      resizeGate.now(); // immediate: waiting would leave the first paint at the wrong size
       // Completing a handshake is not the same as having a connection. The limiter accepts the
       // upgrade and only then closes 1013, and a flapping server accepts every attach and drops it
       // — treating either as success would clear the backoff and switch on the unlimited retry for
@@ -444,7 +456,7 @@ export function SessionModal({
       if (s.length > 0) void navigator.clipboard.writeText(s).catch(() => undefined);
     });
 
-    const ro = new ResizeObserver(() => { sendResize(); });
+    const ro = new ResizeObserver(() => { resizeGate.later(); });
     ro.observe(el);
     // A second observer, on the TERMINAL rather than on the box holding it, and it sets the HEIGHT
     // only. xterm rounds down to whole rows, so its box is up to one row shorter than the space it
@@ -481,6 +493,7 @@ export function SessionModal({
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pageshow", onPageShow);
       ro.disconnect();
+      resizeGate.dispose();
       frameObserver.disconnect();
       detachTouchScroll();
       detachWheelGain();
