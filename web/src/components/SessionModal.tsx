@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { useEffect, useRef, useState, type JSX } from "react";
 
 import { KeyBar } from "./KeyBar";
+import { PastePrompt } from "./PastePrompt";
 import { SessionMeta } from "./SessionMeta";
 import { useTheme } from "./ThemeProvider";
 import {
@@ -114,6 +115,8 @@ export function SessionModal({
   ctrlArmedRef.current = ctrlArmed;
   const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
+  // Open only when the clipboard could not be read directly — see handlePasteButton.
+  const [pastePrompt, setPastePrompt] = useState(false);
 
   // Esc closes (kills WS→PTY via the teardown effect). Separate effect so it doesn't churn the terminal.
   useEffect(() => {
@@ -503,17 +506,25 @@ export function SessionModal({
   // iOS has no paste menu to offer over the terminal (see KeyBar), so the bar's button reads the
   // clipboard itself. Same bytes as a real paste — formatPaste brackets it, so Claude Code treats a
   // multi-line clipboard as one paste instead of a run of Enters.
+  function injectPaste(text: string): void {
+    if (text === "") return;
+    setDropError(null);
+    sendInputRef.current?.(formatPaste(text));
+  }
+
   async function handlePasteButton(): Promise<void> {
     if (!liveRef.current) { setDropError("session is not live — try again"); return; }
+    // Direct read is one tap, so try it first. It is also the path that does not exist everywhere:
+    // Firefox refuses readText outright, and an insecure origin serves no clipboard API at all.
+    // Neither is an error worth showing — both just mean "ask the user to paste into a real field".
     try {
-      // A user gesture is required and iOS prompts the first time; a refusal lands in the catch.
-      const text = await navigator.clipboard.readText();
-      if (text === "") return;
-      setDropError(null);
-      sendInputRef.current?.(formatPaste(text));
-    } catch (err) {
-      // No clipboard API at all (an insecure origin serves none), or the read was denied.
-      setDropError(err instanceof Error ? err.message : String(err));
+      // No availability check: lib.dom types `navigator.clipboard` as always present and it is not,
+      // so a guard would be flagged as a redundant condition while the real absence still throws.
+      // The throw is the check — a missing API, a refusal and a denied permission all land here, and
+      // all three mean the same thing: fall back to a field the user can paste into.
+      injectPaste(await navigator.clipboard.readText());
+    } catch {
+      setPastePrompt(true);
     }
   }
 
@@ -686,6 +697,12 @@ export function SessionModal({
           refocus={() => { termRef.current?.focus(); }}
           onPaste={() => { void handlePasteButton().finally(() => { termRef.current?.focus(); }); }}
         />
+        {pastePrompt && (
+          <PastePrompt
+            onCancel={() => { setPastePrompt(false); termRef.current?.focus(); }}
+            onText={(text) => { setPastePrompt(false); injectPaste(text); termRef.current?.focus(); }}
+          />
+        )}
         {dragging && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
             <span className="text-foreground text-sm font-medium rounded-md border border-border bg-card/80 px-4 py-2">
