@@ -72,21 +72,23 @@ export function KeyBar({ onKey, applicationCursorKeys, onCtrlArmedChange, ctrlAr
     refocus();
   }
 
-  const toggle = (
-    <button
-      type="button"
-      title={hidden ? "Show keys" : "Hide keys"}
-      aria-label={hidden ? "Show keys" : "Hide keys"}
-      aria-expanded={!hidden}
-      className={`${BTN} ml-auto`}
-      onPointerDown={(e) => { e.preventDefault(); setHiddenPref(!hidden); }}
-    >{hidden ? "⌨" : "▾"}</button>
-  );
-
   if (hidden) {
-    // Collapsed to the reopen affordance alone — one button, no border above it, so the row reads as
-    // part of the terminal rather than as a bar that is still there.
-    return <div className="shrink-0 flex px-1 py-0.5">{toggle}</div>;
+    // ABSOLUTE, so it occupies no height at all: the whole point of collapsing is to hand those rows
+    // to the terminal, and a button left in the flex column would keep most of them. It floats over
+    // the output in the corner instead, dimmed until touched, and the terminal's ResizeObserver
+    // refits into the space the bar gave up.
+    return (
+      <button
+        type="button"
+        title="Show keys"
+        aria-label="Show keys"
+        aria-expanded={false}
+        className="absolute bottom-1 right-1 z-10 h-7 w-7 rounded border border-border bg-card/70
+          text-foreground text-xs leading-none flex items-center justify-center opacity-60
+          active:opacity-100 select-none touch-manipulation"
+        onPointerDown={(e) => { e.preventDefault(); setHiddenPref(false); }}
+      >⌨</button>
+    );
   }
 
   return (
@@ -125,7 +127,14 @@ export function KeyBar({ onKey, applicationCursorKeys, onCtrlArmedChange, ctrlAr
           }}
         >{a.label}</button>
       ))}
-      {toggle}
+      <button
+        type="button"
+        title="Hide keys"
+        aria-label="Hide keys"
+        aria-expanded
+        className={`${BTN} ml-auto`}
+        onPointerDown={(e) => { e.preventDefault(); setHiddenPref(true); }}
+      >▾</button>
     </div>
   );
 }

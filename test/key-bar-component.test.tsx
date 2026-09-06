@@ -87,6 +87,13 @@ describe("KeyBar", () => {
     expect(refocus).toHaveBeenCalledTimes(3);
   });
 
+  it("gives the collapsed row's height to the terminal — the reopen button is out of the flow", () => {
+    // A button left in the flex column would keep most of the height collapsing was meant to free.
+    renderBar({ coarse: true });
+    fireEvent.pointerDown(screen.getByLabelText("Hide keys"));
+    expect(screen.getByLabelText("Show keys").className).toContain("absolute");
+  });
+
   it("collapses to a single reopen button and comes back", () => {
     renderBar({ coarse: true });
     fireEvent.pointerDown(screen.getByLabelText("Hide keys"));
