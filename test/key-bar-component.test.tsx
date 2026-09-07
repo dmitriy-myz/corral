@@ -13,7 +13,14 @@ function stubPointer(coarse: boolean): void {
   }));
 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  // The bar persists whether it is collapsed, so a test that collapses it decides how the next one
+  // starts unless the store is cleared. Guarded because Node 26's own experimental global
+  // localStorage shadows jsdom's, leaving window.localStorage undefined there.
+  try { window.localStorage.clear(); } catch { /* no storage in this environment */ }
+});
 
 function renderBar(opts: { coarse: boolean; ctrlArmed?: boolean }) {
   stubPointer(opts.coarse);
