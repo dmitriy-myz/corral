@@ -23,7 +23,9 @@ import { readTerminalPrefs } from "../lib/terminal-prefs";
 import { attachCommittedTextInput } from "../lib/text-input";
 import { attachTouchScroll } from "../lib/touch-scroll";
 import { isFileDrag, uploadFile, UPLOAD_MAX_BYTES } from "../lib/upload";
-import { observeViewport, overlayStyle, readViewport, terminalBoxStyle, type Viewport } from "../lib/visual-viewport";
+import {
+  type LayoutMemo, observeViewport, overlayStyle, readViewport, stableLayoutHeight, terminalBoxStyle, type Viewport,
+} from "../lib/visual-viewport";
 import { attachWheelGain } from "../lib/wheel-gain";
 
 import "@xterm/xterm/css/xterm.css";
@@ -105,7 +107,19 @@ export function SessionModal({
   // stylesheet's own sizing is already right.
   const [viewport, setViewport] = useState<Viewport | null>(null);
   useEffect(() => {
-    const sync = (): void => { setViewport(readViewport(window)); };
+    // Firefox iOS shrinks innerHeight under the keyboard too, so the layout height is frozen while the
+    // terminal has focus on a touch device — the only state a keyboard can be up in. A rotation
+    // changes the width and unfreezes; a desktop window resize never freezes.
+    const coarse = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+    let memo: LayoutMemo | null = null;
+    const sync = (): void => {
+      const vp = readViewport(window);
+      if (vp === null) { setViewport(null); return; }
+      const focused = coarse && document.activeElement === termRef.current?.textarea;
+      const layoutHeight = stableLayoutHeight(memo, window.innerWidth, vp.innerHeight, focused);
+      memo = { width: window.innerWidth, height: layoutHeight };
+      setViewport({ ...vp, layoutHeight });
+    };
     sync();
     return observeViewport(window, sync);
   }, []);
@@ -590,7 +604,7 @@ export function SessionModal({
   // muting the header without dimming anything the operator can actually see.
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center z-50 sm:bg-black/60"
+      className="fixed inset-0 flex items-center justify-center z-50 bg-card sm:bg-black/60"
       style={overlayStyle(viewport)}
       onClick={onClose}
     >

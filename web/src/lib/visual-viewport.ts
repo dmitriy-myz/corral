@@ -6,7 +6,9 @@
 export interface Viewport {
   readonly height: number;
   readonly offsetTop: number;
-  /** The layout viewport's height; a soft keyboard shrinks `height` but leaves this alone. */
+  /** `window.innerHeight` as read: stable under a keyboard on Safari and Chrome, shrunk by it on Firefox iOS. */
+  readonly innerHeight: number;
+  /** The height the terminal is laid out for; `innerHeight`, or a frozen earlier value while a keyboard may be up. */
   readonly layoutHeight: number;
 }
 
@@ -36,9 +38,23 @@ export interface WindowLike {
  * view, and an overlay left at 0 would then start above the visible area. Both are set, so `bottom`
  * from `inset-0` is over-constrained and the browser drops it — which is what we want.
  */
-export function overlayStyle(vp: Viewport | null): { height: string; top: string } | undefined {
+export function overlayStyle(vp: Viewport | null): { height: string; top: string; paddingBottom: string } | undefined {
   if (vp === null) return undefined;
-  return { height: `${String(vp.height)}px`, top: `${String(vp.offsetTop)}px` };
+  // Padding reaches the layout viewport's bottom: Firefox iOS floats its keyboard accessory keys over
+  // that strip, and without it the page shows through under them. Under Safari's keyboard it is unseen.
+  const below = Math.max(0, vp.innerHeight - vp.offsetTop - vp.height);
+  return { height: `${String(vp.height + below)}px`, top: `${String(vp.offsetTop)}px`, paddingBottom: `${String(below)}px` };
+}
+
+export interface LayoutMemo {
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The layout height to size the terminal for: held at its pre-keyboard value while `frozen`, until the width changes. */
+export function stableLayoutHeight(prev: LayoutMemo | null, width: number, innerHeight: number, frozen: boolean): number {
+  if (!frozen || prev?.width !== width) return innerHeight;
+  return Math.max(prev.height, innerHeight);
 }
 
 /** Height of the bottom-anchored terminal box: grown by what the keyboard covers, so the pty keeps its rows. */
@@ -52,7 +68,7 @@ export function terminalBoxStyle(vp: Viewport | null): { height: string } | unde
 export function readViewport(w: WindowLike): Viewport | null {
   const vv = w.visualViewport;
   if (vv === null || vv === undefined) return null;
-  return { height: vv.height, offsetTop: vv.offsetTop, layoutHeight: w.innerHeight };
+  return { height: vv.height, offsetTop: vv.offsetTop, innerHeight: w.innerHeight, layoutHeight: w.innerHeight };
 }
 
 /** Subscribes to every event that can change the visible region. Returns an unsubscribe. */
