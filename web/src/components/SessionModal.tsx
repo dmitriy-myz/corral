@@ -23,7 +23,7 @@ import { readTerminalPrefs } from "../lib/terminal-prefs";
 import { attachCommittedTextInput } from "../lib/text-input";
 import { attachTouchScroll } from "../lib/touch-scroll";
 import { isFileDrag, uploadFile, UPLOAD_MAX_BYTES } from "../lib/upload";
-import { observeViewport, overlayStyle, readViewport, type Viewport } from "../lib/visual-viewport";
+import { observeViewport, overlayStyle, readViewport, terminalBoxStyle, type Viewport } from "../lib/visual-viewport";
 import { attachWheelGain } from "../lib/wheel-gain";
 
 import "@xterm/xterm/css/xterm.css";
@@ -713,13 +713,19 @@ export function SessionModal({
 
             The inset is deliberately tiny on a phone: every pixel of frame there is a pixel not spent
             on output. */}
-        <div className="relative flex-1 min-h-0 m-0.5 sm:m-1">
-          <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
-          <div
-            ref={frameRef}
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 top-0 rounded border border-muted-foreground/30"
-          />
+        <div className="relative flex-1 min-h-0 overflow-hidden">
+          {/* Bottom-anchored and sized by terminalBoxStyle: a soft keyboard slides the top rows out of
+              view instead of refitting the pty. The former m-0.5/m-1 margin is the inset below. */}
+          <div className="absolute inset-x-0 bottom-0 h-full" style={terminalBoxStyle(viewport)}>
+            <div className="absolute inset-0.5 sm:inset-1">
+              <div ref={containerRef} className="absolute inset-0 overflow-hidden" />
+              <div
+                ref={frameRef}
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 top-0 rounded border border-muted-foreground/30"
+              />
+            </div>
+          </div>
         </div>
         <KeyBar
           ctrlArmed={ctrlArmed}

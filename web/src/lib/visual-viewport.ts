@@ -6,11 +6,15 @@
 export interface Viewport {
   readonly height: number;
   readonly offsetTop: number;
+  /** The layout viewport's height; a soft keyboard shrinks `height` but leaves this alone. */
+  readonly layoutHeight: number;
 }
 
 // Structural, not `Window`: the repo bans type assertions, so a test needs to be able to hand these
 // functions a plain object. The real `window` satisfies it as-is.
-export interface VisualViewportLike extends Viewport {
+export interface VisualViewportLike {
+  readonly height: number;
+  readonly offsetTop: number;
   addEventListener: (type: "resize" | "scroll", cb: () => void) => void;
   removeEventListener: (type: "resize" | "scroll", cb: () => void) => void;
 }
@@ -19,6 +23,9 @@ export interface VisualViewportLike extends Viewport {
 // property refuses an explicit `undefined`, which is exactly what a test for "no API here" passes.
 export interface WindowLike {
   readonly visualViewport: VisualViewportLike | null | undefined;
+  readonly innerHeight: number;
+  addEventListener: (type: "resize", cb: () => void) => void;
+  removeEventListener: (type: "resize", cb: () => void) => void;
 }
 
 /**
@@ -34,11 +41,18 @@ export function overlayStyle(vp: Viewport | null): { height: string; top: string
   return { height: `${String(vp.height)}px`, top: `${String(vp.offsetTop)}px` };
 }
 
+/** Height of the bottom-anchored terminal box: grown by what the keyboard covers, so the pty keeps its rows. */
+export function terminalBoxStyle(vp: Viewport | null): { height: string } | undefined {
+  if (vp === null) return undefined;
+  const occluded = Math.max(0, vp.layoutHeight - vp.height);
+  return { height: `calc(100% + ${String(occluded)}px)` };
+}
+
 /** Reads the current visual viewport, or null where the API is absent. */
 export function readViewport(w: WindowLike): Viewport | null {
   const vv = w.visualViewport;
   if (vv === null || vv === undefined) return null;
-  return { height: vv.height, offsetTop: vv.offsetTop };
+  return { height: vv.height, offsetTop: vv.offsetTop, layoutHeight: w.innerHeight };
 }
 
 /** Subscribes to every event that can change the visible region. Returns an unsubscribe. */
@@ -49,8 +63,10 @@ export function observeViewport(w: WindowLike, onChange: () => void): () => void
   // focused input only fires scroll, and that moves offsetTop.
   vv.addEventListener("resize", onChange);
   vv.addEventListener("scroll", onChange);
+  w.addEventListener("resize", onChange); // a rotation changes innerHeight, which the layout height follows
   return () => {
     vv.removeEventListener("resize", onChange);
     vv.removeEventListener("scroll", onChange);
+    w.removeEventListener("resize", onChange);
   };
 }
